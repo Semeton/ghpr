@@ -134,6 +134,36 @@ export GHPR_AUTO_PR=true
 ghpr                  # Uses env vars
 ```
 
+## Conflict Management & Divergent Branches
+
+ghpr includes intelligent conflict detection and branch management:
+
+### Check Branch Status
+
+```bash
+ghpr --status                    # Show divergence summary
+ghpr-resolve --check-divergence  # Detailed branch analysis
+ghpr-resolve --conflicts         # List conflicted files
+```
+
+### Auto-Fix Common Issues
+
+```bash
+ghpr-resolve --auto    # Automatically apply recommended action:
+                       # - Rebase if diverged
+                       # - Pull if behind
+                       # - Continue if merge/rebase in progress
+```
+
+### Display the Logo
+
+```bash
+ghpr --logo    # Show the colorful ghpr logo
+ghpr-logo      # Shortcut to display logo
+```
+
+The system automatically detects merges and rebases in progress and prevents accidental operations.
+
 ## Automatic Updates
 
 When you run ghpr, it automatically checks if a newer version is available by comparing your current version against the latest git tag. If an update is available, ghpr will prompt you:

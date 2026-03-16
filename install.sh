@@ -10,6 +10,12 @@
 
 set -euo pipefail
 
+# Show logo
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/ghpr-logo.sh" ]]; then
+  bash "$SCRIPT_DIR/ghpr-logo.sh"
+fi
+
 # ─── Progress Bar ─────────────────────────────────────────────────────────────
 
 PROGRESS_WIDTH=30

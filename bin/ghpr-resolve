@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# ghpr-resolve — Help resolve conflicts and manage divergent branches
+#
+# Usage:
+#   ghpr-resolve [--status|--merge|--rebase|--check-divergence]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+check_git_status() {
+  if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+    echo "❌ Not inside a git repository"
+    exit 1
+  fi
+}
+
+check_divergence() {
+  check_git_status
+  
+  local branch current_branch upstream
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  upstream=$(git rev-parse --abbrev-ref @{u} 2>/dev/null || echo "")
+  
+  if [[ -z "$upstream" ]]; then
+    echo "⚠️  No upstream branch set for $current_branch"
+    return 1
+  fi
+  
+  local ahead behind
+  ahead=$(git rev-list --count "$upstream..HEAD" 2>/dev/null || echo 0)
+  behind=$(git rev-list --count "HEAD..$upstream" 2>/dev/null || echo 0)
+  
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    cat <<EOF
+{
+  "branch": "$current_branch",
+  "upstream": "$upstream",
+  "ahead": $ahead,
+  "behind": $behind,
+  "diverged": $([ $ahead -gt 0 ] && [ $behind -gt 0 ] && echo true || echo false),
+  "needs_pull": $([ $behind -gt 0 ] && echo true || echo false),
+  "needs_push": $([ $ahead -gt 0 ] && echo true || echo false)
+}
+EOF
+  else
+    echo ""
+    echo "📊 Branch Divergence Report"
+    echo "─────────────────────────────"
+    echo "   Local:  $current_branch"
+    echo "   Remote: $upstream"
+    echo ""
+    echo "   Your commits ahead:  $ahead"
+    echo "   Remote commits:      $behind"
+    echo ""
+    
+    if [[ $ahead -gt 0 && $behind -gt 0 ]]; then
+      echo "⚠️  DIVERGED: Both have new commits"
+      echo "   Run: git rebase $upstream"
+      echo "   Or:  git merge $upstream"
+    elif [[ $behind -gt 0 ]]; then
+      echo "⬇️  BEHIND: Remote has $behind new commit(s)"
+      echo "   Run: git pull --rebase"
+    elif [[ $ahead -gt 0 ]]; then
+      echo "⬆️  AHEAD: You have $ahead new commit(s) to push"
+      echo "   Run: ghpr (or git push)"
+    else
+      echo "✅ IN SYNC: Local and remote are identical"
+    fi
+    echo ""
+  fi
+}
+
+check_conflicts() {
+  check_git_status
+  
+  local conflict_files conflict_count
+  conflict_count=$(git diff --name-only --diff-filter=U 2>/dev/null | wc -l || echo 0)
+  
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    if [[ $conflict_count -gt 0 ]]; then
+      echo "{"
+      echo '  "has_conflicts": true,'
+      echo "  \"conflict_count\": $conflict_count,"
+      echo '  "files": ['
+      git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    "/' | sed 's/$/",/' | sed '$ s/,$//'
+      echo "  ]"
+      echo "}"
+    else
+      echo '{"has_conflicts": false, "conflict_count": 0, "files": []}'
+    fi
+  else
+    if [[ $conflict_count -gt 0 ]]; then
+      echo ""
+      echo "❌ MERGE CONFLICTS DETECTED: $conflict_count file(s)"
+      echo "─────────────────────────────────────────────"
+      git diff --name-only --diff-filter=U
+      echo ""
+      echo "Resolve conflicts in your editor, then:"
+      echo "  git add ."
+      echo "  git commit"
+      echo ""
+    else
+      echo "✅ No merge conflicts"
+    fi
+  fi
+}
+
+show_help() {
+  cat << 'EOF'
+ghpr-resolve — Manage conflicts and divergent branches
+
+Usage:
+  ghpr-resolve --status           # Check current status
+  ghpr-resolve --check-divergence # Show branch divergence
+  ghpr-resolve --conflicts        # Check for merge conflicts
+  ghpr-resolve --merge            # Continue a merge
+  ghpr-resolve --rebase           # Continue a rebase
+  ghpr-resolve --auto             # Auto-fix recommended actions
+  ghpr-resolve --json             # Output as JSON
+
+Examples:
+  ghpr-resolve --check-divergence    # See if local/remote differ
+  ghpr-resolve --conflicts           # List conflicted files
+  ghpr-resolve --auto                # Auto-apply recommended fix
+EOF
+}
+
+auto_fix() {
+  check_git_status
+  
+  # Check if we're in a merge
+  if [[ -d .git/MERGE_HEAD ]]; then
+    echo "🔄 Resolving merge..."
+    git diff --name-only --diff-filter=U | while read -r file; do
+      echo "   Edited: $file"
+    done
+    echo ""
+    echo "Run: git add . && git commit"
+    return 0
+  fi
+  
+  # Check divergence and suggest action
+  local ahead behind
+  ahead=$(git rev-list --count "@{u}..HEAD" 2>/dev/null || echo 0)
+  behind=$(git rev-list --count "HEAD..@{u}" 2>/dev/null || echo 0)
+  
+  if [[ $ahead -gt 0 && $behind -gt 0 ]]; then
+    echo "🔧 Auto-fixing diverge: rebasing onto remote..."
+    git rebase origin/$(git rev-parse --abbrev-ref HEAD)
+    echo "✅ Rebase complete"
+  elif [[ $behind -gt 0 ]]; then
+    echo "🔧 Auto-fixing: pulling from remote..."
+    git pull --rebase
+    echo "✅ Pull complete"
+  else
+    echo "✅ No action needed"
+  fi
+}
+
+JSON_OUTPUT=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --status)
+      check_divergence
+      exit 0
+      ;;
+    --check-divergence)
+      check_divergence
+      exit 0
+      ;;
+    --conflicts)
+      check_conflicts
+      exit 0
+      ;;
+    --merge)
+      echo "🔀 Continuing merge..."
+      git status
+      exit 0
+      ;;
+    --rebase)
+      echo "🔀 Continuing rebase..."
+      git status
+      exit 0
+      ;;
+    --auto)
+      auto_fix
+      exit 0
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+  esac
+done
+
+show_help

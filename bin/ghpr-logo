@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# ghpr-logo — Display the ghpr logo
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bash "$SCRIPT_DIR/ghpr-logo.sh"

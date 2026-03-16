@@ -316,11 +316,32 @@ require_cmd() {
   command -v "$1" &>/dev/null || die "Required command not found: $1. Please install it."
 }
 
+# ─── Display Logo ─────────────────────────────────────────────────────────────
+
+show_logo_on_first_run() {
+  # Only show logo on interactive mode or if it's the first argument
+  if [[ "$1" == "--logo" ]] || [[ -z "${GHPR_LOGO_SHOWN:-}" ]]; then
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    if [[ -f "$script_dir/ghpr-logo.sh" ]]; then
+      bash "$script_dir/ghpr-logo.sh"
+      export GHPR_LOGO_SHOWN=true
+    fi
+  fi
+}
+
 # ─── Pre-flight ───────────────────────────────────────────────────────────────
 
 require_cmd git
 
 git rev-parse --is-inside-work-tree &>/dev/null || die "Not inside a git repository."
+
+# Check for ongoing merge or rebase
+if [[ -d .git/MERGE_HEAD ]]; then
+  die "A merge is in progress. Resolve conflicts and run: git commit"
+elif [[ -d .git/rebase-merge ]] || [[ -d .git/rebase-apply ]]; then
+  die "A rebase is in progress. Resolve conflicts and run: git rebase --continue"
+fi
 
 # Check for updates (non-blocking, run in background if possible)
 check_for_updates &
@@ -382,6 +403,10 @@ while [[ $# -gt 0 ]]; do
       agent_mode_prompt ;;
     --status)
       status_report ;;
+    --logo)
+      show_logo_on_first_run --logo
+      exit 0
+      ;;
     --)
       shift; FILES+=("$@"); break ;;
     -*)
