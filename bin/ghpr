@@ -10,6 +10,8 @@
 #   -m, --message <msg>     Commit message (required when there are changes to commit)
 #   -d, --draft             Create PR as a draft
 #       --no-pr             Commit and push only; skip PR creation
+#       --dry-run           Show what would happen without making changes
+#       --json              Output results in JSON format
 #   -v, --version           Print ghpr version
 #   -h, --help              Show this help message
 #
@@ -40,6 +42,38 @@ fi
 die()   { echo "❌ ghpr: $*" >&2; exit 1; }
 info()  { echo "ℹ  $*"; }
 ok()    { echo "✅ $*"; }
+
+output_json() {
+  local success="$1"
+  local message="${2:-}"
+  
+  printf '{"success":%s,"version":"%s","message":"%s"' "$success" "$GHPR_VERSION" "${message//\"/\\\"}"
+  
+  # Add commit info if available
+  if [[ -n "${COMMIT_HASH:-}" ]]; then
+    printf ',"commit":{"hash":"%s","message":"%s"}' "$COMMIT_HASH" "${COMMIT_MSG//\"/\\\"}"
+  fi
+  
+  # Add push info if available
+  if [[ -n "${PUSHED_BRANCH:-}" ]]; then
+    printf ',"push":{"branch":"%s","remote":"origin"}' "$PUSHED_BRANCH"
+  fi
+  
+  # Add PR info if available
+  if [[ -n "${PR_CREATED:-}" ]]; then
+    printf ',"pr":{"created":true,"head":"%s","base":"%s"}' "$HEAD_BRANCH" "$BASE_BRANCH"
+  fi
+  
+  printf '}\n'
+}
+
+suppress_output() {
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    # Suppress human-readable output when using JSON mode
+    return 0
+  fi
+  return 1
+}
 
 usage() {
   # Print every leading comment line (strip the leading '# ' or lone '#')
@@ -131,6 +165,8 @@ BASE_BRANCH="$DEFAULT_BASE_BRANCH"
 COMMIT_MSG=""
 DRAFT=false
 SKIP_PR=false
+DRY_RUN=false
+JSON_OUTPUT=false
 FILES=()
 
 # ─── Argument Parsing ─────────────────────────────────────────────────────────
@@ -150,6 +186,10 @@ while [[ $# -gt 0 ]]; do
       DRAFT=true; shift ;;
     --no-pr)
       SKIP_PR=true; shift ;;
+    --dry-run)
+      DRY_RUN=true; shift ;;
+    --json)
+      JSON_OUTPUT=true; shift ;;
     -v|--version)
       print_version ;;
     -h|--help)
@@ -174,17 +214,19 @@ if [[ "$HEAD_BRANCH" != "$CURRENT_BRANCH" ]]; then
   if ! git diff --quiet || ! git diff --cached --quiet; then
     die "Cannot switch to $HEAD_BRANCH with local changes present. Commit or stash changes first."
   fi
-  info "Switching to branch: $HEAD_BRANCH"
-  git checkout "$HEAD_BRANCH"
+  suppress_output || info "Switching to branch: $HEAD_BRANCH"
+  if [[ "$DRY_RUN" != true ]]; then
+    git checkout "$HEAD_BRANCH"
+  fi
 fi
 
 # ─── Stage files ──────────────────────────────────────────────────────────────
 
 if [[ ${#FILES[@]} -gt 0 ]]; then
-  info "Staging: ${FILES[*]}"
+  suppress_output || info "Staging: ${FILES[*]}"
   git add -- "${FILES[@]}"
 else
-  info "Staging all changes (git add -A)"
+  suppress_output || info "Staging all changes (git add -A)"
   git add -A
 fi
 
@@ -192,40 +234,73 @@ fi
 
 if ! git diff --cached --quiet; then
   [[ -n "$COMMIT_MSG" ]] || die "A commit message is required (-m / --message) when there are staged changes."
-  git commit -m "$COMMIT_MSG"
-  ok "Committed: $COMMIT_MSG"
+  
+  if [[ "$DRY_RUN" == true ]]; then
+    suppress_output || info "[DRY RUN] Would commit: $COMMIT_MSG"
+    COMMIT_HASH="dry-run-hash"
+  else
+    git commit -m "$COMMIT_MSG"
+    COMMIT_HASH=$(git rev-parse --short HEAD)
+    suppress_output || ok "Committed: $COMMIT_MSG"
+  fi
 else
-  info "Nothing to commit — working tree is clean."
+  suppress_output || info "Nothing to commit — working tree is clean."
 fi
 
 # ─── Sync with remote ─────────────────────────────────────────────────────────
 
-if git ls-remote --exit-code --heads origin "$HEAD_BRANCH" &>/dev/null; then
-  info "Rebasing $HEAD_BRANCH onto origin/$HEAD_BRANCH..."
-  git pull --rebase origin "$HEAD_BRANCH"
-else
-  info "Remote branch origin/$HEAD_BRANCH not found yet — skipping pre-push rebase."
+if [[ "$DRY_RUN" != true ]]; then
+  if git ls-remote --exit-code --heads origin "$HEAD_BRANCH" &>/dev/null; then
+    suppress_output || info "Rebasing $HEAD_BRANCH onto origin/$HEAD_BRANCH..."
+    git pull --rebase origin "$HEAD_BRANCH" 2>/dev/null || true
+  else
+    suppress_output || info "Remote branch origin/$HEAD_BRANCH not found yet — skipping pre-push rebase."
+  fi
 fi
 
 # ─── Push ─────────────────────────────────────────────────────────────────────
 
-info "Pushing $HEAD_BRANCH to origin..."
-if git ls-remote --exit-code --heads origin "$HEAD_BRANCH" &>/dev/null; then
+suppress_output || info "Pushing $HEAD_BRANCH to origin..."
+if [[ "$DRY_RUN" == true ]]; then
+  suppress_output || info "[DRY RUN] Would push $HEAD_BRANCH to origin"
+  PUSHED_BRANCH="$HEAD_BRANCH"
+elif git ls-remote --exit-code --heads origin "$HEAD_BRANCH" &>/dev/null; then
   git push origin "$HEAD_BRANCH"
+  PUSHED_BRANCH="$HEAD_BRANCH"
 else
   git push --set-upstream origin "$HEAD_BRANCH"
+  PUSHED_BRANCH="$HEAD_BRANCH"
 fi
-ok "Pushed $HEAD_BRANCH"
+suppress_output || ok "Pushed $HEAD_BRANCH"
 
 # ─── Pull Request ─────────────────────────────────────────────────────────────
 
 if [[ "$SKIP_PR" == true ]]; then
-  info "Skipping PR creation (--no-pr)."
+  suppress_output || info "Skipping PR creation (--no-pr)."
+  
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    output_json true "Commit and push completed (PR skipped)"
+  fi
   exit 0
 fi
 
 if [[ "$HEAD_BRANCH" == "$BASE_BRANCH" ]]; then
-  info "HEAD and BASE are the same branch ($HEAD_BRANCH) — skipping PR creation."
+  suppress_output || info "HEAD and BASE are the same branch ($HEAD_BRANCH) — skipping PR creation."
+  
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    output_json true "Same branch; PR skipped"
+  fi
+  exit 0
+fi
+
+if [[ "$DRY_RUN" == true ]]; then
+  suppress_output || info "[DRY RUN] Would create PR: $HEAD_BRANCH → $BASE_BRANCH"
+  suppress_output || info "[DRY RUN] Title: $COMMIT_MSG"
+  PR_CREATED=true
+  
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    output_json true "Dry run completed successfully"
+  fi
   exit 0
 fi
 
@@ -247,7 +322,12 @@ if [[ "$OPEN_PRS" == "0" ]]; then
     --body "Automated PR: \`$HEAD_BRANCH\` → \`$BASE_BRANCH\`." \
     $DRAFT_FLAG
 
-  ok "PR created: $HEAD_BRANCH → $BASE_BRANCH"
+  suppress_output || ok "PR created: $HEAD_BRANCH → $BASE_BRANCH"
+  PR_CREATED=true
 else
-  info "An open PR already exists for $HEAD_BRANCH → $BASE_BRANCH."
+  suppress_output || info "An open PR already exists for $HEAD_BRANCH → $BASE_BRANCH."
+fi
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+  output_json true "Operation completed successfully"
 fi

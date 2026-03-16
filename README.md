@@ -38,6 +38,38 @@ When you run ghpr, it automatically checks if a newer version is available by co
 
 If you accept, ghpr runs `update.sh` automatically. You can also update manually with `./update.sh`.
 
+## LLM Integration
+
+ghpr is designed to be easily discoverable and usable by LLMs (Large Language Models). This enables AI assistants to automatically create and manage pull requests instead of manually running git commands.
+
+### For LLM Tools
+
+**Detection:**
+- Check for `ghpr.json` manifest in the repo root
+- Or run `ghpr --version` to detect availability
+
+**Recommended Workflow:**
+1. Check availability: `ghpr --version`
+2. Preview changes: `ghpr --dry-run --json -m "commit message"`
+3. Review the JSON output to validate before proceeding
+4. Execute: `ghpr --json -m "commit message"`
+
+**Key Flags for LLM Use:**
+- `--dry-run`: Shows what would happen without making changes
+- `--json`: Outputs machine-readable JSON instead of human text
+- `--no-pr`: Creates commit/push only (useful for intermediate commits)
+
+**Example LLM Workflow:**
+```bash
+# Preview
+ghpr --dry-run --json -m "feat: implement feature" src/file.ts
+
+# If satisfied, execute
+ghpr --json -m "feat: implement feature" src/file.ts
+```
+
+The `ghpr.json` file contains complete metadata about the tool's capabilities, making it easy for LLMs to understand and integrate ghpr into their workflows.
+
 ## Versioning and Updates
 
 This project uses Semantic Versioning in the `VERSION` file:

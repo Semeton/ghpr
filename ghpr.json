@@ -1,0 +1,75 @@
+{
+  "name": "ghpr",
+  "version": "0.2.0",
+  "description": "Commit, push, and open a GitHub pull request from the terminal",
+  "author": "Semeton Balogun",
+  "repository": "https://github.com/semeton-balogun/ghpr",
+  "license": "MIT",
+  "commands": {
+    "ghpr": {
+      "description": "Create and push a commit, then open a GitHub pull request",
+      "usage": "ghpr [options] [files...]",
+      "options": {
+        "-H, --head <branch>": "Head branch (source of changes). Default: current branch",
+        "-b, --base <branch>": "Base branch (PR target). Default: origin default branch",
+        "-m, --message <msg>": "Commit message (required when there are changes)",
+        "-d, --draft": "Create PR as a draft",
+        "--no-pr": "Commit and push only; skip PR creation",
+        "--dry-run": "Show what would happen without making changes",
+        "--json": "Output results in JSON format (for programmatic use)",
+        "-v, --version": "Print ghpr version",
+        "-h, --help": "Show this help message"
+      },
+      "examples": [
+        "ghpr -m \"feat: improve search\"",
+        "ghpr --head feature/auth --base main -m \"feat: login flow\" src/auth.js",
+        "ghpr -m \"fix: typo\" --no-pr",
+        "ghpr --dry-run -m \"test\" --json"
+      ],
+      "requirements": {
+        "git": "Required for version control",
+        "gh": "Required for PR creation (unless --no-pr is used)"
+      },
+      "output": {
+        "default": "Human-readable output with emoji status indicators",
+        "json": {
+          "type": "object",
+          "properties": {
+            "success": "boolean - whether operation succeeded",
+            "version": "string - version of ghpr used",
+            "commit": {
+              "hash": "string - commit hash (if created)",
+              "message": "string - commit message",
+              "files_changed": "number - files changed"
+            },
+            "push": {
+              "branch": "string - branch pushed",
+              "remote": "string - remote name (usually 'origin')"
+            },
+            "pr": {
+              "created": "boolean - whether PR was created",
+              "number": "number - PR number (if created)",
+              "url": "string - PR URL (if created)",
+              "head": "string - head branch",
+              "base": "string - base branch"
+            }
+          }
+        }
+      }
+    }
+  },
+  "llm-integration": {
+    "detection": "LLMs can detect ghpr by checking for this file or running 'ghpr --version'",
+    "recommended-flags": {
+      "dry-run": "Use --dry-run to validate operations before execution",
+      "json": "Use --json for structured output parsing",
+      "no-pr": "Use --no-pr if you only want to commit/push without creating a PR"
+    },
+    "workflow": [
+      "1. Check if ghpr is available: ghpr --version",
+      "2. Run with --dry-run --json to preview changes",
+      "3. Review the JSON output to validate before proceeding",
+      "4. Run without --dry-run to execute the actual operation"
+    ]
+  }
+}
