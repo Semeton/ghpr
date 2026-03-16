@@ -44,6 +44,96 @@ ghpr --help
 ghpr --version
 ```
 
+## One-Touch Version Control: Interactive & AI Modes
+
+### Interactive Mode (No Flags Needed)
+
+Just run ghpr with no arguments for an interactive prompt:
+
+```bash
+ghpr
+# Prompted: Commit type? (feat/fix/docs/...)
+# Prompted: Description?
+# Shows diff preview
+# Asks for confirmation
+```
+
+### Quick Commit Aliases
+
+Use pre-configured shortcuts for common commit types:
+
+```bash
+ghpr-feat "add authentication"    # feat: add authentication
+ghpr-fix "resolve login bug"      # fix: resolve login bug
+ghpr-docs "update readme"         # docs: update readme
+ghpr-release "0.3.0"              # release: v0.3.0
+```
+
+### AI Commit Suggestion
+
+Let ghpr analyze your changes and suggest a commit message:
+
+```bash
+git add .
+ghpr --suggest           # Shows smart suggestion based on diff
+ghpr --preview           # Preview the changes before committing
+ghpr --suggest --json    # Get suggestion as JSON for LLM processing
+```
+
+### Agent Mode for LLMs
+
+LLMs can interact with ghpr using structured JSON:
+
+```bash
+ghpr --agent             # Returns JSON schema for LLM to fill in
+# Example response shows required/optional fields for commit
+```
+
+Then LLM can execute: `ghpr --json -m "message"`
+
+### Batch Commits (for Scripts/LLMs)
+
+Create multiple commits in sequence:
+
+```bash
+ghpr-batch <<EOF
+feat: implement auth
+fix: resolve login issue
+docs: update changelog
+EOF
+```
+
+### Repository Status Report
+
+Check the current state of your repository:
+
+```bash
+ghpr --status            # Human-readable status
+ghpr --status --json     # Detailed JSON report with suggested next actions
+```
+
+### Config File Support
+
+Create `.ghprrc` in your repo root or home directory:
+
+```json
+{
+  "default_base": "main",
+  "interactive_mode": true,
+  "enforce_conventional_commits": true,
+  "show_preview": true
+}
+```
+
+Or use environment variables:
+
+```bash
+export GHPR_MESSAGE="feat: auto-generated"
+export GHPR_BASE="main"
+export GHPR_AUTO_PR=true
+ghpr                  # Uses env vars
+```
+
 ## Automatic Updates
 
 When you run ghpr, it automatically checks if a newer version is available by comparing your current version against the latest git tag. If an update is available, ghpr will prompt you:

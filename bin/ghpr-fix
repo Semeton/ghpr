@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# ghpr-fix — Quick alias for fix commits
+# Usage: ghpr-fix "description"
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$SCRIPT_DIR/bin/ghpr" -m "fix: ${*:-}" "${@:2}"

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# ghpr-status — Show repository health and status
+#
+# Usage:
+#   ghpr-status         # Human-readable output
+#   ghpr-status --json  # Machine-readable JSON
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$SCRIPT_DIR/bin/ghpr" --status "$@"

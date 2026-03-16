@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# ghpr-feat — Quick alias for feature commits
+# Usage: ghpr-feat "description"
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$SCRIPT_DIR/bin/ghpr" -m "feat: ${*:-}" "${@:2}"

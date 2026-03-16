@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# ghpr-docs — Quick alias for documentation commits
+# Usage: ghpr-docs "description"
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$SCRIPT_DIR/bin/ghpr" -m "docs: ${*:-}" "${@:2}"

@@ -1,0 +1,20 @@
+{
+  "default_base": "main",
+  "auto_create_branch": false,
+  "enforce_conventional_commits": true,
+  "suggest_commit_message": false,
+  "show_preview": false,
+  "interactive_mode": true,
+  "conventional_commit_types": [
+    "feat",
+    "fix",
+    "docs",
+    "style",
+    "refactor",
+    "perf",
+    "test",
+    "chore",
+    "ci",
+    "build"
+  ]
+}

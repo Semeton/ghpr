@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# ghpr-batch — Create multiple commits in sequence
+#
+# Usage:
+#   ghpr-batch <<EOF
+#   feat: add authentication
+#   fix: resolve login issue
+#   docs: update readme
+#   EOF
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GHPR="$SCRIPT_DIR/bin/ghpr"
+
+if [[ ! -t 0 ]]; then
+  # Reading from stdin
+  mapfile -t MESSAGES
+else
+  die "No input provided. Use: ghpr-batch <<EOF ... EOF"
+fi
+
+if [[ ${#MESSAGES[@]} -eq 0 ]]; then
+  echo "❌ No messages provided"
+  exit 1
+fi
+
+echo ""
+echo "🔄 Batch commit mode"
+echo "   Creating ${#MESSAGES[@]} commit(s)..."
+echo ""
+
+for i in "${!MESSAGES[@]}"; do
+  MSG="${MESSAGES[$i]}"
+  [[ -z "$MSG" ]] && continue
+  
+  COUNT=$((i + 1))
+  TOTAL=${#MESSAGES[@]}
+  
+  printf "[%d/%d] %s\n" "$COUNT" "$TOTAL" "$MSG"
+  
+  "$GHPR" -m "$MSG" --no-pr || {
+    echo "⚠️  Failed at commit $COUNT. Stopping."
+    exit 1
+  }
+done
+
+echo ""
+echo "✅ Batch commit complete: ${#MESSAGES[@]} commit(s) created"

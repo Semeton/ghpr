@@ -3,6 +3,9 @@
 #
 # Usage:
 #   ghpr [options] [files...]
+#   ghpr                        # Interactive mode
+#   ghpr-feat "description"     # Quick feature commit
+#   ghpr-fix "description"      # Quick fix commit
 #
 # Options:
 #   -H, --head <branch>     Head branch (source of changes). Default: current branch
@@ -12,6 +15,10 @@
 #       --no-pr             Commit and push only; skip PR creation
 #       --dry-run           Show what would happen without making changes
 #       --json              Output results in JSON format
+#       --preview           Show diff preview before committing
+#       --suggest           Suggest commit message based on changes
+#       --agent             Agent mode: output JSON schema for LLM interaction
+#       --status            Show health report (uncommitted changes, branch status)
 #   -v, --version           Print ghpr version
 #   -h, --help              Show this help message
 #
@@ -73,6 +80,175 @@ suppress_output() {
     return 0
   fi
   return 1
+}
+
+load_config() {
+  CONFIG_FILE="${HOME}/.ghprrc"
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    CONFIG_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.ghprrc"
+  fi
+  
+  if [[ -f "$CONFIG_FILE" ]]; then
+    # Parse JSON config (simple approach for common keys)
+    DEFAULT_BASE=$(grep -o '"default_base"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" | cut -d'"' -f4 || echo "")
+    INTERACTIVE_MODE=$(grep -o '"interactive_mode"[[:space:]]*:[[:space:]]*true' "$CONFIG_FILE" | grep -q true && echo true || echo false)
+  fi
+}
+
+suggest_commit_message() {
+  # Generate a commit message suggestion based on git diff
+  local added=$(git diff --cached --stat | wc -l)
+  local deleted=$(git diff --cached --stat | tail -1 | awk '{print $NF}' | tr 'd' ' ')
+  
+  if [[ $added -gt 5 ]]; then
+    echo "feat: add new features and updates"
+  elif git diff --cached | grep -q "fix\|bug"; then
+    echo "fix: resolve issues and bugs"
+  elif git diff --cached | grep -q "README\|\.md\|docs"; then
+    echo "docs: update documentation"
+  else
+    echo "chore: update dependencies and configuration"
+  fi
+}
+
+show_diff_preview() {
+  if [[ $(git diff --cached --stat | wc -l) -eq 0 ]]; then
+    info "No staged changes to preview."
+    return 0
+  fi
+  
+  echo ""
+  echo "📝 Preview of changes:"
+  echo "────────────────────────────────────────"
+  git diff --cached --stat
+  echo "────────────────────────────────────────"
+  echo ""
+}
+
+interactive_prompt() {
+  # Interactive mode for users who just run 'ghpr' with no args
+  echo ""
+  echo "🚀 ghpr interactive mode"
+  echo ""
+  
+  show_diff_preview
+  
+  # Get commit type
+  echo "Commit type:"
+  echo "  1) feat (feature)   2) fix (bug fix)      3) docs (documentation)"
+  echo "  4) style (format)   5) refactor (code)    6) test (testing)"
+  echo "  7) chore (other)    8) custom"
+  read -r -p "Select [1-8]: " type_choice
+  
+  case $type_choice in
+    1) TYPE="feat" ;;
+    2) TYPE="fix" ;;
+    3) TYPE="docs" ;;
+    4) TYPE="style" ;;
+    5) TYPE="refactor" ;;
+    6) TYPE="test" ;;
+    7) TYPE="chore" ;;
+    8) read -r -p "Enter type: " TYPE ;;
+    *) TYPE="chore" ;;
+  esac
+  
+  # Get description
+  read -r -p "Description: " DESC
+  COMMIT_MSG="$TYPE: $DESC"
+  
+  # Confirm
+  echo ""
+  echo "Commit: $COMMIT_MSG"
+  read -r -p "Proceed? [y/N]: " confirm
+  
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "Cancelled."
+    exit 0
+  fi
+}
+
+agent_mode_prompt() {
+  # Output a JSON schema for LLM interaction
+  local current_branch current_status
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  current_status=$(git status --short | wc -l)
+  
+  cat <<EOF
+{
+  "mode": "agent",
+  "version": "$GHPR_VERSION",
+  "context": {
+    "current_branch": "$current_branch",
+    "uncommitted_changes": $current_status,
+    "has_staged_changes": $(git diff --cached --quiet && echo false || echo true)
+  },
+  "prompt": "What would you like to commit?",
+  "schema": {
+    "type": "object",
+    "required": ["message"],
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "Commit message (or 'type: description' for conventional commits)"
+      },
+      "files": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Files to stage (optional; defaults to all)"
+      },
+      "head_branch": {
+        "type": "string",
+        "description": "Head branch for PR (optional)"
+      },
+      "base_branch": {
+        "type": "string",
+        "description": "Base branch for PR (optional)"
+      },
+      "create_pr": {
+        "type": "boolean",
+        "description": "Create PR? (default: true)"
+      }
+    }
+  }
+}
+EOF
+  exit 0
+}
+
+status_report() {
+  # Show health report of the repository
+  local uncommitted unpushed branch
+  uncommitted=$(git status --short | wc -l)
+  unpushed=$(git log origin/main..HEAD 2>/dev/null | wc -l || echo 0)
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    cat <<EOF
+{
+  "success": true,
+  "branch": "$branch",
+  "uncommitted_changes": $uncommitted,
+  "unpushed_commits": $unpushed,
+  "remote_tracking": "$(git rev-parse @{u} 2>/dev/null | cut -c1-7 || echo 'none')",
+  "status": "$([ $uncommitted -gt 0 ] && echo 'has-changes' || echo 'clean')",
+  "suggested_next_action": "$([ $uncommitted -gt 0 ] && echo 'stage-and-commit' || echo 'nothing-to-do')"
+}
+EOF
+  else
+    echo ""
+    echo "📊 Repository Status"
+    echo "────────────────────"
+    echo "   Branch: $branch"
+    echo "   Uncommitted: $uncommitted file(s)"
+    echo "   Unpushed: $unpushed commit(s)"
+    if [[ $uncommitted -gt 0 ]]; then
+      echo "   → Run ghpr to commit changes"
+    else
+      echo "   → Working tree is clean"
+    fi
+    echo ""
+  fi
+  exit 0
 }
 
 usage() {
@@ -167,6 +343,8 @@ DRAFT=false
 SKIP_PR=false
 DRY_RUN=false
 JSON_OUTPUT=false
+SHOW_PREVIEW=false
+SUGGEST_MODE=false
 FILES=()
 
 # ─── Argument Parsing ─────────────────────────────────────────────────────────
@@ -194,6 +372,14 @@ while [[ $# -gt 0 ]]; do
       print_version ;;
     -h|--help)
       usage ;;
+    --preview)
+      SHOW_PREVIEW=true; shift ;;
+    --suggest)
+      SUGGEST_MODE=true; shift ;;
+    --agent)
+      agent_mode_prompt ;;
+    --status)
+      status_report ;;
     --)
       shift; FILES+=("$@"); break ;;
     -*)
@@ -208,7 +394,36 @@ if [[ "$SKIP_PR" != true ]]; then
   gh auth status &>/dev/null || die "GitHub CLI is not authenticated. Run: gh auth login"
 fi
 
-# ─── Switch to head branch ────────────────────────────────────────────────────
+# ─── Load Config and Handle Special Modes ───────────────────────────────────────
+
+load_config
+
+# Handle suggest mode
+if [[ "$SUGGEST_MODE" == true ]]; then
+  git diff --cached --quiet && die "No staged changes to suggest from. Stage files first with 'git add'."
+  suggestion=$(suggest_commit_message)
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    output_json true "Suggestion: $suggestion"
+  else
+    echo ""
+    echo "💡 Suggested message:"
+    echo "   $suggestion"
+    echo ""
+  fi
+  exit 0
+fi
+
+# Handle interactive mode (if no args and not in special modes)
+if [[ -z "$COMMIT_MSG" && ${#FILES[@]} -eq 0 && "$SUGGEST_MODE" != true && "$DRY_RUN" != true ]]; then
+  if [[ "$INTERACTIVE_MODE" == "true" ]]; then
+    interactive_prompt
+  fi
+fi
+
+# Handle preview mode
+if [[ "$SHOW_PREVIEW" == true ]]; then
+  show_diff_preview
+fi
 
 if [[ "$HEAD_BRANCH" != "$CURRENT_BRANCH" ]]; then
   if ! git diff --quiet || ! git diff --cached --quiet; then
