@@ -14,6 +14,12 @@ Install to a user-local bin directory:
 INSTALL_DIR="$HOME/.local/bin" ./install.sh
 ```
 
+Skip the optional fzf install prompt (useful for CI/non-interactive scripts):
+
+```bash
+GHPR_SKIP_FZF_PROMPT=true ./install.sh
+```
+
 ### Shell Auto-Discovery (Optional)
 
 To automatically check for ghpr updates each time you open a terminal (like oh-my-zsh), add this to your `~/.zshrc` or `~/.bashrc`:
@@ -52,11 +58,20 @@ Just run ghpr with no arguments for an interactive prompt:
 
 ```bash
 ghpr
-# Prompted: Commit type? (feat/fix/docs/...)
+# File selection: spacebar to toggle, enter to confirm
+# Commit type selection: arrow keys to navigate, enter to select
 # Prompted: Description?
-# Shows diff preview
 # Asks for confirmation
 ```
+
+**Best experience:** Install `gum` for beautiful styled interactive selection with intuitive keyboard controls:
+
+```bash
+brew install gum
+ghpr
+```
+
+Without `gum`, you get text-based prompts (still fully functional with all the same options).
 
 ### Quick Commit Aliases
 
